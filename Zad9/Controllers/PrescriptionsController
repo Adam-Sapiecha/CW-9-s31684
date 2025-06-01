@@ -1,0 +1,126 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using CW9.Data;
+using CW9.DTOs;
+using CW9.Models;
+
+namespace CW9.Controllers
+{
+    [ApiController]
+    [Route("api/prescriptions")]
+    public class PrescriptionsController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public PrescriptionsController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpPost]
+        public IActionResult AddPrescription([FromBody] PrescriptionRequestDto request)
+        {
+            if (request.Medicaments.Count > 10)
+                return BadRequest("A prescription can have a maximum of 10 medicaments.");
+
+            if (request.DueDate < request.Date)
+                return BadRequest("DueDate must be after or equal to Date.");
+
+            var doctor = _context.Doctors.Find(request.IdDoctor);
+            if (doctor == null)
+                return NotFound("Doctor not found.");
+
+            var patient = _context.Patients
+                .FirstOrDefault(p => p.FirstName == request.Patient.FirstName && p.LastName == request.Patient.LastName);
+
+            if (patient == null)
+            {
+                patient = new Patient
+                {
+                    FirstName = request.Patient.FirstName,
+                    LastName = request.Patient.LastName
+                };
+                _context.Patients.Add(patient);
+                _context.SaveChanges();
+            }
+
+            foreach (var med in request.Medicaments)
+            {
+                if (!_context.Medicaments.Any(m => m.IdMedicament == med.IdMedicament))
+                    return NotFound($"Medicament with id {med.IdMedicament} not found.");
+            }
+
+            var prescription = new Prescription
+            {
+                Date = request.Date,
+                DueDate = request.DueDate,
+                IdDoctor = doctor.IdDoctor,
+                IdPatient = patient.IdPatient
+            };
+
+            _context.Prescriptions.Add(prescription);
+            _context.SaveChanges();
+
+            foreach (var med in request.Medicaments)
+            {
+                var presMed = new PrescriptionMedicament
+                {
+                    IdPrescription = prescription.IdPrescription,
+                    IdMedicament = med.IdMedicament,
+                    Dose = med.Dose,
+                    Details = med.Details
+                };
+                _context.PrescriptionMedicaments.Add(presMed);
+            }
+
+            _context.SaveChanges();
+
+            return Ok(new { prescription.IdPrescription });
+        }
+
+        [HttpGet("{idPatient}")]
+        public IActionResult GetPatientData(int idPatient)
+        {
+            var patient = _context.Patients
+                .Include(p => p.Prescriptions)
+                    .ThenInclude(pr => pr.PrescriptionMedicaments)
+                        .ThenInclude(pm => pm.Medicament)
+                .Include(p => p.Prescriptions)
+                    .ThenInclude(pr => pr.Doctor)
+                .FirstOrDefault(p => p.IdPatient == idPatient);
+
+            if (patient == null)
+                return NotFound();
+
+            var result = new
+            {
+                patient.IdPatient,
+                patient.FirstName,
+                patient.LastName,
+                Prescriptions = patient.Prescriptions
+                    .OrderBy(pr => pr.DueDate)
+                    .Select(pr => new
+                    {
+                        pr.IdPrescription,
+                        pr.Date,
+                        pr.DueDate,
+                        Medicaments = pr.PrescriptionMedicaments.Select(pm => new
+                        {
+                            pm.Medicament.IdMedicament,
+                            pm.Medicament.Name,
+                            pm.Dose,
+                            pm.Medicament.Description
+                        }),
+                        Doctor = new
+                        {
+                            pr.Doctor.IdDoctor,
+                            pr.Doctor.FirstName,
+                            pr.Doctor.LastName
+                        }
+                    })
+            };
+
+            return Ok(result);
+        }
+    }
+}

@@ -1,0 +1,8 @@
+namespace CW9.DTOs
+{
+    public class PatientDto
+    {
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+    }
+}

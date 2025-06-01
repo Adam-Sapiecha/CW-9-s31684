@@ -1,0 +1,49 @@
+using Xunit;
+using CW9.Controllers;
+using CW9.Data;
+using Microsoft.EntityFrameworkCore;
+using CW9.DTOs;
+using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Linq;
+
+namespace CW9.Tests
+{
+    public class PrescriptionsControllerTests
+    {
+        private readonly AppDbContext _context;
+        private readonly PrescriptionsController _controller;
+
+        public PrescriptionsControllerTests()
+        {
+            var options = new DbContextOptionsBuilder<AppDbContext>()
+                .UseInMemoryDatabase(databaseName: "TestDb")
+                .Options;
+
+            _context = new AppDbContext(options);
+            _controller = new PrescriptionsController(_context);
+        }
+
+        [Fact]
+        public void AddPrescription_ReturnsBadRequest_WhenMoreThan10Medicaments()
+        {
+            var request = new PrescriptionRequestDto
+            {
+                IdDoctor = 1,
+                Date = DateTime.Now,
+                DueDate = DateTime.Now.AddDays(1),
+                Patient = new PatientDto { FirstName = "Test", LastName = "User" },
+                Medicaments = Enumerable.Range(1, 11).Select(i => new PrescriptionMedicamentDto
+                {
+                    IdMedicament = i,
+                    Dose = 1,
+                    Details = "Test"
+                }).ToList()
+            };
+
+            var result = _controller.AddPrescription(request);
+
+            Assert.IsType<BadRequestObjectResult>(result);
+        }
+    }
+}
