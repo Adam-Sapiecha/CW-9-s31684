@@ -1,0 +1,76 @@
+using Microsoft.EntityFrameworkCore;
+using Zad9.Data;
+using Zad9.DTOs;
+using Zad9.Models;
+
+namespace Zad9.Services
+{
+    public interface DBService
+    {
+        Task AddPrescriptionAsync(PrescriptionRequestDto dto);
+    }
+
+    public class DBServiceImpl : DBService
+    {
+        private readonly AppDbContext _context;
+
+        public DBServiceImpl(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        public async Task AddPrescriptionAsync(PrescriptionRequestDto dto)
+        {
+            if (dto.DueDate < dto.Date)
+                throw new ArgumentException("DueDate cannot be earlier than Date");
+
+            if (dto.Medicaments.Count > 10)
+                throw new ArgumentException("Prescription cannot have more than 10 medicaments");
+
+            var doctor = await _context.Doctors.FindAsync(dto.IdDoctor);
+            if (doctor == null)
+                throw new ArgumentException("Doctor not found");
+
+            var patient = await _context.Patients
+                .FirstOrDefaultAsync(p =>
+                    p.FirstName == dto.Patient.FirstName &&
+                    p.LastName == dto.Patient.LastName &&
+                    p.Address == dto.Patient.Address);
+
+            if (patient == null)
+            {
+                patient = new Patient
+                {
+                    FirstName = dto.Patient.FirstName,
+                    LastName = dto.Patient.LastName,
+                    Address = dto.Patient.Address
+                };
+                _context.Patients.Add(patient);
+                await _context.SaveChangesAsync();
+            }
+
+            foreach (var medDto in dto.Medicaments)
+            {
+                if (!await _context.Medicaments.AnyAsync(m => m.IdMedicament == medDto.IdMedicament))
+                    throw new ArgumentException($"Medicament with id {medDto.IdMedicament} not found");
+            }
+
+            var prescription = new Prescription
+            {
+                Date = dto.Date,
+                DueDate = dto.DueDate,
+                IdDoctor = dto.IdDoctor,
+                IdPatient = patient.IdPatient,
+                PrescriptionMedicaments = dto.Medicaments.Select(med => new PrescriptionMedicament
+                {
+                    IdMedicament = med.IdMedicament,
+                    Dose = med.Dose,
+                    Description = med.Description
+                }).ToList()
+            };
+
+            _context.Prescriptions.Add(prescription);
+            await _context.SaveChangesAsync();
+        }
+    }
+}
